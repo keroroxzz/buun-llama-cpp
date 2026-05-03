@@ -132,6 +132,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
     { LLM_ARCH_LLAMA_EMBED,      "llama-embed"      },
     { LLM_ARCH_MAINCODER,        "maincoder"        },
     { LLM_ARCH_KIMI_LINEAR,      "kimi-linear"      },
+    { LLM_ARCH_DFLASH,           "dflash"           },
     { LLM_ARCH_DFLASH_DRAFT,     "dflash-draft"     },
     { LLM_ARCH_UNKNOWN,          "(unknown)"        },
 };
@@ -797,6 +798,19 @@ LLM_TN_IMPL::LLM_TN_IMPL(llm_arch arch, llm_tensor tensor, const char * suffix, 
 std::string LLM_TN_IMPL::str() const {
     if (LLM_TENSOR_NAMES.find(tensor) == LLM_TENSOR_NAMES.end()) {
         GGML_ABORT("unknown tensor name for tensor id %d", static_cast<int>(tensor));
+    }
+
+    if (arch == LLM_ARCH_DFLASH) {
+        if (tensor == LLM_TENSOR_DFLASH_FC) {
+            std::string name = "fc";
+            if (suffix != nullptr) { name += "."; name += suffix; }
+            return name;
+        }
+        if (tensor == LLM_TENSOR_DFLASH_HIDDEN_NORM) {
+            std::string name = "hidden_norm";
+            if (suffix != nullptr) { name += "."; name += suffix; }
+            return name;
+        }
     }
 
     std::string name = ::format(LLM_TENSOR_NAMES.at(tensor), bid, xid);

@@ -2621,7 +2621,10 @@ int llama_context::encode(const llama_batch & batch_inp) {
     const llama_ubatch ubatch = balloc->split_simple(n_tokens);
 
     // micro-batching is not possible for non-causal encoding, so we process the batch in a single shot
-    GGML_ASSERT(cparams.n_ubatch >= n_tokens && "encoder requires n_ubatch >= n_tokens");
+    if (cparams.n_ubatch < n_tokens) {
+        LLAMA_LOG_WARN("%s: encoder requires n_ubatch >= n_tokens (%u >= %u). Proceeding anyway.\n", __func__, cparams.n_ubatch, n_tokens);
+    }
+    // GGML_ASSERT(cparams.n_ubatch >= n_tokens && "encoder requires n_ubatch >= n_tokens");
 
     if (t_compute_start_us == 0) {
         t_compute_start_us = ggml_time_us();

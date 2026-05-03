@@ -1900,6 +1900,12 @@ llama_context * common_speculative_create_ctx_dft(const common_params_speculativ
     }
     llama_context_params cparams_dft = params.cparams_dft;
     cparams_dft.dflash_n_slots = dflash_n_slots;
+    
+    // DEBUG PATCH
+    fprintf(stderr, "DEBUG: common_speculative_create_ctx_dft: setting n_batch/n_ubatch to 512 (was %u/%u)\n", cparams_dft.n_batch, cparams_dft.n_ubatch);
+    cparams_dft.n_batch = 512;
+    cparams_dft.n_ubatch = 512;
+    
     llama_context * ctx_dft = llama_init_from_model(params.model_dft, cparams_dft);
     if (ctx_dft == nullptr) {
         LOG_ERR("%s", "failed to create draft context\n");

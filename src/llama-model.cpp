@@ -2609,21 +2609,33 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
+        case LLM_ARCH_DFLASH:
         case LLM_ARCH_DFLASH_DRAFT:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
                 ml.get_key(LLM_KV_DFLASH_BLOCK_SIZE,          hparams.dflash_block_size,        false);
+                if (hparams.dflash_block_size == 16) ml.get_key("dflash.block_size", hparams.dflash_block_size, false);
+                
                 ml.get_key(LLM_KV_DFLASH_MASK_TOKEN_ID,       hparams.dflash_mask_token_id,     false);
+                if (hparams.dflash_mask_token_id == 0) ml.get_key("dflash.mask_token_id", hparams.dflash_mask_token_id, false);
+                
                 ml.get_key(LLM_KV_DFLASH_N_TARGET_FEATURES,   hparams.dflash_n_target_features, false);
+                if (hparams.dflash_n_target_features == 25600) ml.get_key("dflash.n_target_features", hparams.dflash_n_target_features, false);
+
                 {
                     const std::string key = ml.llm_kv(LLM_KV_DFLASH_TARGET_LAYER_IDS);
-                    const int kid = gguf_find_key(ml.metadata, key.c_str());
+                    int kid = gguf_find_key(ml.metadata, key.c_str());
+                    if (kid < 0) kid = gguf_find_key(ml.metadata, "dflash.target_layer_ids");
                     if (kid >= 0) {
                         const size_t n = gguf_get_arr_n(ml.metadata, kid);
                         hparams.dflash_n_target_layers = std::min((uint32_t) n, (uint32_t) 8);
                         const void * data = gguf_get_arr_data(ml.metadata, kid);
                         for (uint32_t i = 0; i < hparams.dflash_n_target_layers; ++i) {
                             hparams.dflash_target_layer_ids[i] = ((const uint32_t *) data)[i];
+                        }
+                        // Recalculate target features if not explicitly provided in metadata
+                        if (hparams.dflash_n_target_features == 25600) {
+                            hparams.dflash_n_target_features = hparams.dflash_n_target_layers * hparams.n_embd;
                         }
                     }
                 }
@@ -7681,7 +7693,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
                 } break;
-            case LLM_ARCH_DFLASH_DRAFT:
+            case LLM_ARCH_DFLASH:
+        case LLM_ARCH_DFLASH_DRAFT:
                 {
                     // shared from target at runtime — not present in GGUF
                     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
@@ -7696,8 +7709,10 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
 
-                        layer.attn_norm      = create_tensor(tn(LLM_TENSOR_ATTN_NORM,      "weight", i), {n_embd}, 0);
-                        layer.attn_post_norm = create_tensor(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i), {n_embd}, 0);
+                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+                        if (ml.weights_map.count(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i).str())) {
+                            layer.attn_post_norm = create_tensor(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i), {n_embd}, 0);
+                        }
 
                         layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head}, 0);
                         layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_k_gqa}, 0);
@@ -8366,6 +8381,7 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
         case LLM_ARCH_LLADA:
         case LLM_ARCH_LLADA_MOE:
         case LLM_ARCH_RND1:
+        case LLM_ARCH_DFLASH:
         case LLM_ARCH_DFLASH_DRAFT:
             {
                 res = nullptr;
@@ -8997,6 +9013,7 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
             {
                 llm = std::make_unique<llm_build_step35_iswa>(*this, params);
             } break;
+        case LLM_ARCH_DFLASH:
         case LLM_ARCH_DFLASH_DRAFT:
             {
                 llm = std::make_unique<llm_build_dflash_draft>(*this, params);
@@ -9253,6 +9270,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_QWEN3NEXT:
         case LLM_ARCH_MIMO2:
         case LLM_ARCH_STEP35:
+        case LLM_ARCH_DFLASH:
         case LLM_ARCH_DFLASH_DRAFT:
             return LLAMA_ROPE_TYPE_NEOX;
 
